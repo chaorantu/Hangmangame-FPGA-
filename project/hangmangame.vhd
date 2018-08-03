@@ -1,0 +1,609 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_unsigned.all;
+USE  IEEE.STD_LOGIC_ARITH.all;
+use ieee . numeric_std .all ;
+entity hangmangame is
+port(CLOCK_50 :in std_logic;
+     KEY:in std_logic_vector(3 downto 0);
+     SW:in std_logic_vector(15 downto 0);
+     HEX0,HEX1,HEX2,HEX3,HEX4,HEX5,HEX6,HEX7:out std_logic_vector(6 downto 0);
+	  LEDG:out std_logic_vector(8 downto 0):="000000000";
+	  LEDR:out std_logic_vector(17 downto 0):="000000000000000000";
+	  lcd_rs             : OUT    std_logic;
+      lcd_en              : OUT    std_logic;
+      lcd_rw             : OUT    std_logic;
+      lcd_on             : OUT    std_logic;
+      lcd_blon           : OUT    std_logic;
+		data_bus_0         : INOUT  STD_LOGIC;
+      data_bus_1         : INOUT  STD_LOGIC;
+      data_bus_2         : INOUT  STD_LOGIC;
+      data_bus_3         : INOUT  STD_LOGIC;
+      data_bus_4         : INOUT  STD_LOGIC;
+      data_bus_5         : INOUT  STD_LOGIC;
+      data_bus_6         : INOUT  STD_LOGIC;
+      data_bus_7         : INOUT  STD_LOGIC);
+end hangmangame;
+
+architecture try of hangmangame is
+
+
+type character_string is array ( 0 to 31 ) of STD_LOGIC_VECTOR( 7 downto 0 );
+  
+  type state_type is (func_set, display_on, mode_set, print_string,
+                      line2, return_home, drop_lcd_e, reset1, reset2,
+                       reset3, display_off, display_clear );
+                       
+  signal state, next_command         : state_type;
+  signal reset: std_logic;
+  
+  signal lcd_display_string          : character_string;
+  signal lcd_display_string_00       : character_string;
+  signal lcd_display_string_01       : character_string;
+  signal lcd_display_string_02       : character_string;
+  signal lcd_display_string_03       : character_string;
+  signal lcd_display_string_04       : character_string;
+  signal lcd_display_string_05       : character_string;
+  signal lcd_display_string_06       : character_string;
+  signal lcd_display_string_07       : character_string;
+  signal lcd_display_string_08       : character_string;
+  signal lcd_display_string_09       : character_string;
+  signal lcd_display_string_10       : character_string;
+  signal lcd_display_string_11       : character_string;
+  
+  signal data_bus_value, next_char   : STD_LOGIC_VECTOR(7 downto 0);
+  signal clk_count_400hz             : STD_LOGIC_VECTOR(23 downto 0);
+  signal char_count                  : STD_LOGIC_VECTOR(4 downto 0);
+  signal clk_400hz_enable,lcd_rw_int : std_logic;
+  
+  signal Hex_Display_Data            : STD_LOGIC_VECTOR(7 DOWNTO 0); 
+  signal data_bus                    : STD_LOGIC_VECTOR(7 downto 0);	
+  signal LCD_CHAR_ARRAY              : STD_LOGIC_VECTOR(3 DOWNTO 0);
+  signal m0,m1,m2,m3,m4,m5,m6,m7,m8,m9: std_logic_vector(7 downto 0);
+
+component alphabet is 
+  port (n: in std_logic_vector(4 downto 0);
+         m:out STD_LOGIC_VECTOR( 7 downto 0 )
+        );
+end component;
+
+component counter4bit is
+   port( clk ,clrb, ld: in std_logic;
+	     l: in std_logic_vector (3 downto 0);
+		  q: out std_logic_vector (3 downto 0));
+end component;
+
+
+component sevenLight
+  port (n: in std_logic_vector(4 downto 0);
+         m: out std_logic_vector(6 downto 0));
+end component;
+
+component shiftreg50bit is
+   port( clk , clrb,find,insert,push,clear:in std_logic;
+         sil,sir,sil0,sir0,guess,input:in std_logic_vector(4 downto 0);
+	 q,q0,qa:out std_logic_vector(49 downto 0);
+         hitnum,count_fail:out std_logic_vector(3 downto 0);
+         finish:out std_logic:='0');
+end component;
+
+type state_type1 is(SET,INPUT,GUESS,DONE);
+signal clrb:std_logic;
+signal current_state:state_type1:=SET;
+signal next_state:state_type1;
+signal count_fail,count_word,wordsize,hitnum:std_logic_vector(3 downto 0):="0000";
+signal find,insert,clear,finish,fail:std_logic:='0';
+signal sil,sir,sil0,sir0,gue,inpu:std_logic_vector(4 downto 0);
+signal q,q0,qc,qa:std_logic_vector(49 downto 0);
+signal result:std_logic;
+signal count,count1 : integer :=1;
+signal clk,clk0:std_logic:='0';
+signal clkq:std_logic:='1';
+signal hitnum_sev, wordsize_sev,count_word_sev,count_fail_sev: std_logic_vector(4 downto 0);
+signal KEY2_previous: std_logic;
+begin
+
+data_bus_0 <= data_bus(0);
+data_bus_1 <= data_bus(1);
+data_bus_2 <= data_bus(2);
+data_bus_3 <= data_bus(3);
+data_bus_4 <= data_bus(4);
+data_bus_5 <= data_bus(5);
+data_bus_6 <= data_bus(6);
+data_bus_7 <= data_bus(7);
+
+lcd_display_string_00 <= 
+  (
+-- Line 1   w     e     l     c     o     m     e                 t      o          
+          x"57",x"65",x"6C",x"63",x"6F",x"6D",x"65",x"20",x"20",x"74",x"6F",x"20",x"20",x"20",x"20",x"20",
+   
+-- Line 2   h     a     n     g     m     a     n                 g     a     m     e      !
+          x"68",x"61",x"6E",x"67",x"6D",x"61",x"6E",x"20",x"20",x"67",x"61",x"6D",x"65",x"21",x"20",x"20" 
+   );
+
+lcd_display_string_01 <= 
+  (
+-- Line 1    i    n     p     u    t      :     o     t     h          L      i     n     k 
+          x"69",x"6E",x"70",x"75",x"74",x"3A",m9,m8,m7,m6,m5,m4,m3,m2,m1,m0,
+   
+-- Line 2   g     u     e     s     s     :     N     N      E    C      T    E     D
+          x"67",x"75",x"65",x"73",x"73",x"3A",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20" 
+   );
+lcd_display_string_02 <= 
+  (
+-- Line 1    i    n     p     u    t      :     o     t     h          L      i     n     k 
+          x"69",x"6E",x"70",x"75",x"74",x"3A",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20",x"20",
+   
+-- Line 2   g     u     e     s     s     :     N     N      E    C      T    E     D
+          x"67",x"75",x"65",x"73",x"73",x"3A",m9,m8,m7,m6,m5,m4,m3,m2,m1,m0 
+   );
+lcd_display_string_03 <= 
+  (
+-- Line 1    a    n     s     w     e      r     :     y     o     u          w     i     n           !
+          x"61",x"6E",x"73",x"77",x"65",x"72",x"3A",x"79",x"6F",x"75",x"20",x"77",x"69",x"6E",x"20",x"21",
+   
+-- Line 2    g     u     e     s     s     :     N     N      E    C      T    E     D
+          m9,m8,m7,m6,m5,m4,m3,m2,m1,m0,x"20",x"20",x"20",x"20",x"20",x"20"
+   );
+	
+lcd_display_string_04 <= 
+  (
+-- Line 1    a    n     s     w     e      r     :     y     o     u          f     a     i     l      !
+          x"61",x"6E",x"73",x"77",x"65",x"72",x"3A",x"79",x"6F",x"75",x"20",x"66",x"61",x"69",x"6C",x"21",
+   
+-- Line 2    g     u     e     s     s     :     N     N      E    C      T    E     D
+          m9,m8,m7,m6,m5,m4,m3,m2,m1,m0,x"20",x"20",x"20",x"20",x"20",x"20"
+   );
+-- BIDIRECTIONAL TRI STATE LCD DATA BUS
+   data_bus <= data_bus_value when lcd_rw_int = '0' else "ZZZZZZZZ";
+   
+-- LCD_RW PORT is assigned to it matching SIGNAL 
+ lcd_rw <= lcd_rw_int;
+
+
+
+
+
+count_word_sev<="0" & count_word;
+hitnum_sev <= "0" & hitnum;
+wordsize_sev<="0" & wordsize(3 downto 0);
+count_fail_sev<="0" &count_fail;
+light1 :sevenLight port map(qc(4 downto 0),HEX2);
+light2 :sevenLight port map(qc(9 downto 5),HEX3);
+light3 :sevenLight port map(qc(14 downto 10),HEX4);
+light4 :sevenLight port map(qc(19 downto 15),HEX5);
+light5 :sevenLight port map(qc(24 downto 20),HEX6);
+light6 :sevenLight port map(count_fail_sev,HEX7);
+lightnum :sevenLight port map(count_word_sev,HEX0);
+lightcountnum :sevenLight port map(wordsize_sev,HEX1);
+letter0 :alphabet port map(qc(4 downto 0),m0);
+letter1 :alphabet port map(qc(9 downto 5),m1);
+letter2 :alphabet port map(qc(14 downto 10),m2);
+letter3 :alphabet port map(qc(19 downto 15),m3);
+letter4 :alphabet port map(qc(24 downto 20),m4);
+letter5 :alphabet port map(qc(29 downto 25),m5);
+letter6 :alphabet port map(qc(34 downto 30),m6);
+letter7 :alphabet port map(qc(39 downto 35),m7);
+letter8 :alphabet port map(qc(44 downto 40),m8);
+letter9 :alphabet port map(qc(49 downto 45),m9);
+shift0:shiftreg50bit port map( clk0 , clrb,find,insert,KEY(2),clear,sil,sir,sil0,sir0,gue,inpu,q,q0,qa,hitnum,count_fail,finish);
+sil<=q(49 downto 45);
+sir<=q(4 downto 0);
+sil0<=q0(49 downto 45);
+sir0<=q0(4 downto 0);
+LEDR(0)<=finish;
+LEDR(1)<=fail;
+LEDR(17)<=not KEY(3);
+LEDR(16)<=not KEY(2);
+LEDR(15)<=not KEY(1);
+LEDR(14)<=not KEY(0);
+LEDR(2)<=result;
+
+
+
+
+
+process(clock_50)
+begin
+      if (rising_edge(clock_50)) then
+         if (reset = '0') then
+            clk_count_400hz <= x"000000";
+            clk_400hz_enable <= '0';
+         else
+           
+           
+--== NOTE for the IF statement below:
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------- 
+-- Due to the fact that each STATE in the LCD Driver State Machine... (Shown further below) ...each state will immediately be followed by the "drop_lcd_e" STATE....
+-- this will cause the Period of the "lcd_e" signal to be doubled when viewed on an Oscilloscope. This also causes your set frequency value 
+-- to be divided in half. The variable "clk_count_400hz" whichever hex value you choose for a specific Frequency, that frequency will be divided in half.  
+-- i.e: (clk_count_400hz <= x"7A120") is the value for a 100hz signal, however when you monitor the LCD's "ENABLE" port with an oscilloscope; it will be detected as 
+-- a 50Hz signal. (Half the Set Frequency). This is becasue the State machine cycles twice!!! Creating 1 Full Cycle for the "LCD_E" Port. Logic HI...then....LOGIC LOW.
+--======================================================================================================================================================================             
+           
+          if (clk_count_400hz <= x"00F424") then            
+                                                 -- If using the DE2 50Mhz Clock,  use clk_count_1600hz <= x"007A12"  (50Mhz/1600hz = 32250   converted to HEX = 7A12 )
+                                                 --                                use clk_count_1250hz <= x"009C40"  (50Mhz/1250hz = 40000   converted to HEX = 9C40 )
+                                                 --                                use clk_count_800hz  <= x"00F424"  (50Mhz/800hz  = 62500   converted to HEX = F424 )
+                                                 --                                use clk_count_400hz  <= x"01E848"  (50Mhz/400hz  = 125000  converted to HEX = 1E848 )
+                                                 --                                use clk_count_200hz  <= x"03D090"  (50Mhz/200hz  = 250000  converted to HEX = 3D090 )
+                                                 --                                use clk_count_100hz  <= x"07A120"  (50Mhz/100hz  = 500000  converted to HEX = 7A120 )
+                                                 --                                use clk_count_50hz   <= x"0F4240"  (50Mhz/50hz   = 1000000 converted to HEX = F4240 )
+                                                 --                                use clk_count_10hz   <= x"4C4B40"  (50Mhz/10hz   = 5000000 converted to HEX = 4C4B40 )
+                                                           
+                                                 --  In Theory for a 27Mhz Clock,  use clk_count_400hz <= x"107AC"  (27Mhz/400hz = 67500  converted to HEX = 107AC )
+                                                 --                                use clk_count_200hz <= x"20F58"  (27Mhz/200hz = 125000 converted to HEX = 20F58 )
+                                                             
+                                                 --  In Theory for a 25Mhz Clock.  use clk_count_400hz <= x"00F424"  (25Mhz/400hz = 62500  converted to HEX = F424 )
+                                                 --                                use clk_count_200hz <= x"01E848"  (25Mhz/200hz = 125000 converted to HEX = 1E848 )
+                                                 --                                use clk_count_100hz <= x"03D090"  (25Mhz/100hz = 250000 converted to HEX = 3D090 )
+                                                           
+                                                           
+                   clk_count_400hz <= clk_count_400hz + 1;                                          
+                   clk_400hz_enable <= '0';                
+           else
+                   clk_count_400hz <= x"000000";
+                   clk_400hz_enable <= '1';
+            end if;
+         end if;
+      end if;
+end process;  
+--==================================================================--    
+  
+  
+  
+  
+--======================== LCD DRIVER CORE ==============================--   
+--                     STATE MACHINE WITH RESET                          -- 
+--===================================================-----===============--  
+process ( clock_50, reset)
+begin
+        if reset = '0' then
+           state <= reset1;
+           data_bus_value <= x"38"; -- RESET
+           next_command <= reset2;
+           lcd_en <= '1';
+           lcd_rs <= '0';
+           lcd_rw_int <= '0';  
+    
+    
+    
+        elsif rising_edge(clock_50) then
+             if clk_400hz_enable = '1' then  
+                 
+                 
+                 
+              --========================================================--                 
+              -- State Machine to send commands and data to LCD DISPLAY
+              --========================================================--
+                 case state is
+                 -- Set Function to 8-bit transfer and 2 line display with 5x8 Font size
+                 -- see Hitachi HD44780 family data sheet for LCD command and timing details
+                       
+                       
+                       
+--======================= INITIALIZATION START ============================--
+                       when reset1 =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"38"; -- EXTERNAL RESET
+                            state <= drop_lcd_e;
+                            next_command <= reset2;
+                            char_count <= "00000";
+  
+                       when reset2 =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"38"; -- EXTERNAL RESET
+                            state <= drop_lcd_e;
+                            next_command <= reset3;
+                            
+                       when reset3 =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"38"; -- EXTERNAL RESET
+                            state <= drop_lcd_e;
+                            next_command <= func_set;
+            
+            
+                       -- Function Set
+                       --==============--
+                       when func_set =>                
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"38";  -- Set Function to 8-bit transfer, 2 line display and a 5x8 Font size
+                            state <= drop_lcd_e;
+                            next_command <= display_off;
+                            
+                            
+                            
+                       -- Turn off Display
+                       --==============-- 
+                       when display_off =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"08"; -- Turns OFF the Display, Cursor OFF and Blinking Cursor Position OFF.......
+                                                     -- (0F = Display ON and Cursor ON, Blinking cursor position ON)
+                            state <= drop_lcd_e;
+                            next_command <= display_clear;
+                           
+                           
+                       -- Clear Display 
+                       --==============--
+                       when display_clear =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"01"; -- Clears the Display    
+                            state <= drop_lcd_e;
+                            next_command <= display_on;
+                           
+                           
+                           
+                       -- Turn on Display and Turn off cursor
+                       --===================================--
+                       when display_on =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"0C"; -- Turns on the Display (0E = Display ON, Cursor ON and Blinking cursor OFF) 
+                            state <= drop_lcd_e;
+                            next_command <= mode_set;
+                          
+                          
+                       -- Set write mode to auto increment address and move cursor to the right
+                       --====================================================================--
+                       when mode_set =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"06"; -- Auto increment address and move cursor to the right
+                            state <= drop_lcd_e;
+                            next_command <= print_string; 
+                            
+                                
+--======================= INITIALIZATION END ============================--                          
+                          
+                          
+                          
+                          
+--=======================================================================--                           
+--               Write ASCII hex character Data to the LCD
+--=======================================================================--
+                       when print_string =>          
+                            state <= drop_lcd_e;
+                            lcd_en <= '1';
+                            lcd_rs <= '1';
+                            lcd_rw_int <= '0';
+                          
+                          
+                               -- ASCII character to output
+                               -----------------------------
+                               -- Below we check to see if the Upper-Byte of the HEX number being displayed is x"0"....We use this number x"0" as a Control Variable, 
+                               -- to know when a certain condition is met.  Next, we proceed to process the "next_char" variable to Sequentially count up in HEX format.
+                               
+                               -- This is required because as you know...Counting in HEX...after #9 comes Letter A.... well if you look at the ASCII CHART, 
+                               -- the Letters A,B,C etc. are in a different COLUMN compared to the one the Decimal Numbers are in.  Letters A...F are in Column  x"4".    
+                               -- Numbers 0...9 are in Column x"3".  The Upper-Byte controls which COLUMN the Character will be selected from... and then Displayed on the LCD. 
+                               
+                               -- So to Count up seamlessly using our 4-Bit Variable 8,9,10,11 and so on...we need to set some IF THEN ELSE conditions 
+                               -- to control this changing of Columns so that it will be displayed counting up in HEX Format....8,9,A,B,C,D etc.
+                                
+                               -- Also, if the High-Byte is detected as an actual Character Column from the ASCII CHART that has Valid Characters 
+                               -- (Like using a Upper-Byte of x"2",x"3",x"4",x"5",x"6" or x"7") then it will just go ahead and decalre  "data_bus_value <= next_char;"  
+                               -- and the "Print_Sring" sequence will continue to execute. These HEX Counting conditions are only being applied to the Variables that have 
+                               -- the x"0" Upper-Byte value.....For our code that is the:  [x"0"&hex_display_data]  variable.  
+
+                               if (next_char(7 downto 4) /= x"0") then
+                                  data_bus_value <= next_char;
+                               else
+                             
+                                    -- Below we process a 4-bit STD_LOGIC_VECTOR that is counting up Sequentially, we process the values so that it Displays in HEX Format as it counts up.
+                                    -- In our case, our SWITCHES have been Mapped to a 4-bit STD_LOGIC_VECTOR and we have placed an Upper-Byte value of x"0" before it.
+                                    -- This triggers the Process below, which will condition which numbers and letters are displayed on the LCD as the 4-Bit Variable counts up past #9 or 1001
+                                    -------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                    
+                                    -- if the number is Greater than 9..... meaning the number is now in the Realm of HEX... A,B,C,D,E,F... then
+                                    if next_char(3 downto 0) >9 then 
+                              
+                                    -- See the ASCII CHART... Letters A...F are in Column  x"4"
+                                      data_bus_value <= x"4" & (next_char(3 downto 0)-9);  
+                                    else 
+                                
+                                    -- See the ASCII CHART... Numbers 0...9 are in Column x"3"
+                                      data_bus_value <= x"3" & next_char(3 downto 0);
+                                    end if;
+                               end if;
+                          
+                          
+                          
+
+                            -- Loop to send out 32 characters to LCD Display (16 by 2 lines)
+                               if (char_count < 31) AND (next_char /= x"fe") then
+                                   char_count <= char_count +1;                            
+                               else
+                                   char_count <= "00000";
+                               end if;
+                  
+                  
+                  
+                            -- Jump to second line?
+                               if char_count = 15 then 
+                                  next_command <= line2;
+                   
+                   
+                   
+                            -- Return to first line?
+                               elsif (char_count = 31) or (next_char = x"fe") then
+                                     next_command <= return_home;
+                               else 
+                                     next_command <= print_string; 
+                               end if; 
+                 
+                 
+                 
+                       -- Set write address to line 2 character 1
+                       --======================================--
+                       when line2 =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"c0";
+                            state <= drop_lcd_e;
+                            next_command <= print_string;      
+                     
+                     
+                       -- Return write address to first character position on line 1
+                       --=========================================================--
+                       when return_home =>
+                            lcd_en <= '1';
+                            lcd_rs <= '0';
+                            lcd_rw_int <= '0';
+                            data_bus_value <= x"80";
+                            state <= drop_lcd_e;
+                            next_command <= print_string; 
+                    
+                    
+                    
+                       -- The next states occur at the end of each command or data transfer to the LCD
+                       -- Drop LCD E line - falling edge loads inst/data to LCD controller
+                       --============================================================================--
+                       when drop_lcd_e =>
+                            state <= next_command;
+                            lcd_en <= '0';
+                            lcd_blon <= '1';
+                            lcd_on   <= '1';
+                        end case;
+
+
+
+
+             end if;-- CLOSING STATEMENT FOR "IF clk_400hz_enable = '1' THEN"
+             
+      end if;-- CLOSING STATEMENT FOR "IF reset = '0' THEN" 
+      
+end process;                                                         
+
+
+
+
+
+
+
+
+
+process(CLOCK_50)
+begin
+if(CLOCK_50'event and CLOCK_50='1') then
+count <=count+1;
+if(count = 2) then
+clk <= not clk;
+count <=1;
+end if;
+if(count1 = 2) then
+clkq <= not clkq;
+count1 <=1;
+end if;
+end if;
+end process;
+
+
+process (CLOCK_50, KEY)
+begin
+	if(KEY(0) ='0') then
+		current_state <= SET;
+	else
+		if(CLOCK_50'event and CLOCK_50='1') then
+		--if(CLOCK_50'event and CLOCK_50='1') then
+		 KEY2_previous <= KEY(2);
+			case current_state is
+				when SET=>
+				   LEDG<="000000001";
+				   qc<=q;
+					next_char <= lcd_display_string_00(CONV_INTEGER(char_count));
+				   clk0<=clk;
+					clrb<='0';
+					--count_fail<="0000";
+					if(KEY(3)='0') then
+						wordsize<=SW(3 downto 0);
+						clrb<='1';
+						current_state<=INPUT;
+					else
+						current_state<=SET;
+						count_word<="0000";
+						wordsize<="0000";
+						clrb<='0';
+						insert<='0';
+					   find<='0';
+						clear<='0';
+						result<='0';
+					end if;
+
+				when INPUT=>
+				LEDG<="000000010";
+				    clk0<=KEY(2);
+					 qc<=q;
+					 next_char <= lcd_display_string_01(CONV_INTEGER(char_count));
+                if(count_word=wordsize) then
+		            count_word<="0000";
+                  current_state<=GUESS;
+                  insert<='0';
+						
+                elsif(KEY(2) ='1' and KEY2_previous='0') then
+                  insert<='1';
+                  inpu<=SW(15 downto 11);
+			         count_word<=count_word+"0001";
+                  current_state<=INPUT;
+               end if;
+
+            when GUESS=>
+				next_char <= lcd_display_string_02(CONV_INTEGER(char_count));
+				LEDG<="000000100";
+				      qc<=q0;
+						--clk0<=KEY(1);
+						clk0<=clk;
+                if(count_fail=7 ) then
+                  current_state<=DONE;
+                  result<='0';
+                elsif(hitnum=wordsize) then
+                  current_state<=DONE;
+                  result<='1';
+                else
+                  if(finish='1') then
+						   clear<='1';
+							find<='0';
+                  elsif(KEY(2) ='1' and KEY2_previous='0') then
+						   --clrb<='0';
+                     clear<='0';
+                     find<='1';
+                     gue<=SW(15 downto 11);
+                  else
+						clear<='0';
+						end if;
+                current_state<=GUESS;
+                end if;
+
+            when DONE=> 
+				   qc<=qa;
+					if(result='1') then
+					next_char <= lcd_display_string_03(CONV_INTEGER(char_count));
+					else
+					next_char <= lcd_display_string_04(CONV_INTEGER(char_count));
+					end if;
+				   LEDG<="000001000";
+               current_state<=DONE;
+					
+			end case;
+			end if;
+    end if;
+
+end process;
+end try;
+          
+     
+         
